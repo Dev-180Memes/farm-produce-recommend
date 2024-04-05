@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Farm Recommendation System</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1>Farm Recommendation System</h1>
+        <form id="profileForm">
+            <div class="form-group">
+                <label for="item">Item:</label>
+                <input type="text" class="form-control" id="Item" name="Item" required>
+            </div>
+            <div class="form-group">
+                <label for="value">Value:</label>
+                <input type="number" class="form-control" id="Value" name="Value" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Get Recommendations</button>
+        </form>
+        <h2>Recommendations</h2>
+        <div id="recommendations"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            $('#profileForm').on('submit', function (e) {
+                e.preventDefault();
+                var formData = {
+                    Item: $('#Item').val(),
+                    Value: $('#Value').val()
+                };
+                $.ajax({
+                    type: 'POST',
+                    url: '/recommendations',
+                    contentType: 'application/json',
+                    data: JSON.stringify(formData),
+                    success: function (data) {
+                        var recommendationsList = $('#recommendations');
+                        recommendationsList.empty();
+                        data.forEach(function (rec) {
+                            recommendationsList.append('<p>Element: ' + rec.Element + ', Item: ' + rec.Item + ', Score: ' + rec.similarity_score.toFixed(2) + '</p>');
+                        });
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

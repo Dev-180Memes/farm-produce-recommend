@@ -1,46 +1,65 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 app = Flask(__name__)
 
+
 class FarmRecommendationSystem:
-    def __init__(self, data):
-        self.data = data
+    def __init__(self):
+        self.data = pd.read_csv("./dataset.csv")
         self.scaler = MinMaxScaler()
+        self.tfidf_vectorizer = TfidfVectorizer()
 
     def preprocess_data(self):
         self.data.fillna(0, inplace=True)
         numeric_columns = ['Value']
         self.data[numeric_columns] = self.scaler.fit_transform(self.data[numeric_columns])
+        self.item_name_vectors = self.tfidf_vectorizer.fit_transform(self.data['Item'])
 
-    def calculate_similarity(self, farmer_value, item_value):
+    @staticmethod
+    def calculate_similarity(farmer_value, item_value):
+        # Calculate numeric similarity
         if farmer_value and item_value:
-            similarity_score = 1 - abs(farmer_value - item_value) / max(farmer_value, item_value)
+            numeric_similarity = np.dot([farmer_value], [item_value]) / (
+                    np.linalg.norm([farmer_value]) * np.linalg.norm([item_value]))
         else:
-            similarity_score = 0
-        return similarity_score
+            numeric_similarity = 0
+        return numeric_similarity
 
     def get_recommendations(self, farmer_profile, top_n=5):
         farmer_item = farmer_profile['Item']
-        farmer_value = farmer_profile['Value']
-        filtered_data = self.data[self.data['Item'] == farmer_item]
-        filtered_data['similarity_score'] = filtered_data['Value'].apply(
+        farmer_value = float(farmer_profile['Value'])
+
+        # Calculate textual similarity
+        farmer_item_vector = self.tfidf_vectorizer.transform([farmer_item])
+        textual_similarity_scores = cosine_similarity(farmer_item_vector, self.item_name_vectors).flatten()
+
+        # Calculate value similarity
+        value_similarity_scores = self.data['Value'].apply(
             lambda item_value: self.calculate_similarity(farmer_value, item_value))
-        unique_items = filtered_data.groupby('Item', as_index=False).max()
-        recommendations = unique_items.sort_values(by='similarity_score', ascending=False).head(top_n)
+
+        # Combine similarities (simple average or weighted average could be used)
+        combined_similarity_scores = (textual_similarity_scores + value_similarity_scores) / 2
+
+        # Sort data based on combined similarity scores and get top_n items
+        self.data['similarity_score'] = combined_similarity_scores
+        recommendations = self.data.sort_values(by='similarity_score', ascending=False).head(top_n)
+
         return recommendations[['Element', 'Item', 'similarity_score']]
 
-# Global variable for the recommendation system instance
-recommendation_system = None
 
-@app.route('/load_data', methods=['POST'])
-def load_data():
-    global recommendation_system
-    data = pd.read_csv("/dataset.csv")
-    recommendation_system = FarmRecommendationSystem(data)
-    recommendation_system.preprocess_data()
-    return jsonify(success=True)
+recommendation_system = FarmRecommendationSystem()
+recommendation_system.preprocess_data()
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 
 @app.route('/recommendations', methods=['POST'])
 def get_recommendations():
@@ -48,7 +67,10 @@ def get_recommendations():
     if recommendation_system is None:
         return jsonify(error="Data not loaded"), 400
     recommendations = recommendation_system.get_recommendations(farmer_profile)
+    # Make sure recommendation only contains unique items
+    recommendations = recommendations.drop_duplicates(subset=['Item'])
     return jsonify(recommendations.to_dict(orient='records'))
+
 
 if __name__ == '__main__':
     app.run(debug=True)
